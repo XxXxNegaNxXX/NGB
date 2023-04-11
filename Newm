@@ -1,0 +1,59 @@
+final class PostsUseCase: Domain.PostsUseCase {
+    
+    private let repository: AbstractRepository<Post>
+
+    init(repository: AbstractRepository<Post>) {
+        self.repository = repository
+    }
+
+    func posts() -> Observable<[Post]> {
+        return repository.query(sortDescriptors: [Post.CoreDataType.uid.descending()])
+    }
+    
+    func save(post: Post) -> Observable<Void> {
+        return repository.save(entity: post)
+    }
+}
+
+final class Repository<T: CoreDataRepresentable>: AbstractRepository<T> where T == T.CoreDataType.DomainType {
+    private let context: NSManagedObjectContext
+    private let scheduler: ContextScheduler
+
+    init(context: NSManagedObjectContext) {
+        self.context = context
+        self.scheduler = ContextScheduler(context: context)
+    }
+
+    override func query(with predicate: NSPredicate? = nil,
+                        sortDescriptors: [NSSortDescriptor]? = nil) -> Observable<[T]> {
+        let request = T.CoreDataType.fetchRequest()
+        request.predicate = predicate
+        request.sortDescriptors = sortDescriptors
+        return context.rx.entities(fetchRequest: request)
+            .mapToDomain()
+            .subscribeOn(scheduler)
+    }
+
+    override func save(entity: T) -> Observable<Void> {
+        return entity.sync(in: context)
+            .mapToVoid()
+            .flatMapLatest(context.rx.save)
+            .subscribeOn(scheduler)
+    }
+}
+
+final class CDPost: NSManagedObject {
+    @NSManaged public var uid: String?
+    @NSManaged public var title: String?
+    @NSManaged public var content: String?
+    @NSManaged public var createDate: NSDate?
+    @NSManaged public var updateDate: NSDate?
+}
+
+final class RMPost: Object {
+    dynamic var uid: String = ""
+    dynamic var createDate: NSDate = NSDate()
+    dynamic var updateDate: NSDate = NSDate()
+    dynamic var title: String = ""
+    dynamic var content: String = ""
+}
